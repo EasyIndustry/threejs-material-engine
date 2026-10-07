@@ -17,6 +17,7 @@ import { defineMaterial, planMaterial, hashMaterial, generatorsOf } from '../../
 import { getGenerator, registerGenerator, listGenerators, resolveParams, paramUniformsGLSL, SURFACE_GLSL, NOISE_GLSL } from '../../src/generators.js';
 import { help } from '../../src/help.js';
 import { ENGINE_MEMBERS } from '../../src/members.js';
+import { applyTriplanar } from './triplanar.js';
 
 const READ = { rgb: 0, r: 1, g: 2, b: 3, a: 4, luminance: 5 };
 const WRAP = { repeat: 0, mirror: 1, clamp: 2 };
@@ -522,6 +523,7 @@ export function createMaterialEngine(renderer, { anisotropy = 8, portable = true
     if (d.alphaMode === 'mask') { mat.alphaTest = d.alphaCutoff; mat.transparent = false; }
     else if (d.alphaMode === 'blend') mat.transparent = true;
     else { mat.opacity = 1; mat.transparent = false; }
+    if (d.mapping.type === 'triplanar') applyTriplanar(mat, d.mapping);
     mat.userData.materialEngine = { hash: hashDe(d), name: d.name };
     return mat;
   }
@@ -544,7 +546,11 @@ export function createMaterialEngine(renderer, { anisotropy = 8, portable = true
     async material(def, { clone = false, onProgress } = {}) {
       const { entrada } = await hornear(def, onProgress);
       entrada.material ??= armar(entrada.plan, entrada.textures);
-      return clone ? entrada.material.clone() : entrada.material;
+      if (!clone) return entrada.material;
+      // three no copia onBeforeCompile al clonar: el mapeo triplanar se vuelve a poner
+      const copia = entrada.material.clone();
+      if (entrada.plan.def.mapping.type === 'triplanar') applyTriplanar(copia, entrada.plan.def.mapping);
+      return copia;
     },
 
     /** Solo hornea: { hash, textures: { canal: Texture }, plan }. @param {Record<string, unknown>} def @param {{ onProgress?: (f: number, canal: string) => void }} [opts] */

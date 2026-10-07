@@ -67,6 +67,7 @@ export const SETTINGS = Object.freeze({
   attenuationDistance: { default: Infinity, range: [0, Infinity], doc: 'a qué distancia la luz ya tomó attenuationColor' },
   iridescenceIOR: { default: 1.3, range: [1, 2.333], doc: 'índice de refracción de la película iridiscente' },
   anisotropyRotation: { default: 0, range: [-360, 360], doc: 'rotación de la anisotropía, en grados' },
+  mapping: { default: 'uv', doc: "cómo se apoyan los mapas en la malla: 'uv' (sus coordenadas) o { type: 'triplanar', scale, sharpness }: proyectados desde los tres ejes del objeto y mezclados según la normal, sin costuras (para mallas sin UV buenas: esferas, piezas talladas)" },
 });
 
 /** ¿El canal puede llevar mapas? (bump se hornea dentro del de normales) @param {string} canal */

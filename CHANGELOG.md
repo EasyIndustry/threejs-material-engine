@@ -1,5 +1,15 @@
 # Cambios
 
+## 0.2.0
+
+- Mapeo triplanar (`mapping: { type: 'triplanar', scale, sharpness }`): cada mapa se proyecta
+  desde los tres ejes del objeto y se mezcla según la normal (|n|^sharpness), sin costuras, para
+  mallas sin UV buenas (una esfera geodésica, piezas talladas). El mapa de normales usa un marco
+  tangente por proyección, y el desplazamiento se mezcla en el vértice (no abre grietas). Es un
+  parche del shader (`adapters/three/triplanar.js`): el path tracer usa las UV de la malla.
+- `material(def, { clone: true })` vuelve a poner el parche triplanar en la copia (three no copia
+  onBeforeCompile).
+
 ## 0.1.0
 
 Primera versión.

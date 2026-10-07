@@ -1,6 +1,6 @@
 {
   "name": "threejs-material-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Materiales por capas para three.js, como en un CAD: todos los canales PBR (difuso, alfa, metálico, rugosidad, normal, bump, desplazamiento, AO, emisivo, transmisión, barniz, sheen…), capas de mapas con modos de fusión y máscaras, capas de material, generadores procedurales y plugins, horneados en la GPU.",
   "type": "module",
   "license": "MIT",

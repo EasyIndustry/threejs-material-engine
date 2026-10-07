@@ -46,6 +46,8 @@ materiales.help();
 - **Horneado en la GPU, una vez**: lo horneado se cachea por hash (la definición y las versiones
   de sus generadores). Con sobremuestreo para los generadores, y con exportación e importación
   de prehorneados (`exportBaked`, `loadBaked`).
+- **Mapeo UV o triplanar**: `mapping: { type: 'triplanar', scale, sharpness }` proyecta los mapas
+  desde los tres ejes y los mezcla según la normal: sin costuras ni polos, en cualquier malla.
 - **Mapas portables**: cada mapa terminado se baja a memoria (`DataTexture`), así sirve en otro
   renderer o contexto — el path tracer de un render final, un exportador a glTF. Con
   `createMaterialEngine(renderer, { portable: false })` queda solo en la GPU (más rápido, pero

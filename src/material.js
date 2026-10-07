@@ -107,6 +107,27 @@ function mascaraDe(v, que) {
   return { source: fuenteDe(o, que), read, invert: !!o.invert, remap, transform: transformDe(o.transform, que) };
 }
 
+/**
+ * El mapeo: 'uv', 'triplanar' o { type: 'triplanar', scale, sharpness }. scale: cuántas unidades del
+ * objeto ocupa una repetición de la textura; sharpness: cuán rápido pasa de una proyección a otra
+ * en los bordes (1 muy mezclado, 8 casi cortado).
+ * @param {unknown} v @returns {{ type: 'uv' } | { type: 'triplanar', scale: number, sharpness: number }}
+ */
+function mapeoDe(v) {
+  if (v === undefined || v === 'uv') return { type: 'uv' };
+  if (v === 'triplanar') return { type: 'triplanar', scale: 1, sharpness: 4 };
+  if (!plano(v)) throw new TypeError("mapping: va 'uv', 'triplanar' o { type: 'triplanar', scale, sharpness }");
+  const o = /** @type {Record<string, unknown>} */ (v);
+  for (const k of Object.keys(o)) if (!['type', 'scale', 'sharpness'].includes(k)) throw new Error(`mapping: clave desconocida ${k}`);
+  if (o.type === 'uv') return { type: 'uv' };
+  if (o.type !== 'triplanar') throw new Error("mapping.type: va 'uv' o 'triplanar'");
+  const scale = o.scale === undefined ? 1 : num(o.scale, 'mapping.scale');
+  const sharpness = o.sharpness === undefined ? 4 : num(o.sharpness, 'mapping.sharpness');
+  if (!(scale > 0)) throw new RangeError('mapping.scale: va mayor que 0 (unidades del objeto por repetición)');
+  if (sharpness < 1 || sharpness > 64) throw new RangeError('mapping.sharpness: va de 1 a 64');
+  return { type: 'triplanar', scale, sharpness };
+}
+
 /** @param {unknown} v @param {string} que @param {string} canal @returns {Layer} */
 function capaDe(v, que, canal) {
   const o = /** @type {Record<string, unknown>} */ (typeof v === 'string' ? { image: v } : v);
@@ -183,6 +204,7 @@ export function defineMaterial(def) {
     if (s.range && typeof s.default === 'number' && !(v === Infinity && s.range[1] === Infinity)) { num(v, k); if (v < s.range[0] || v > s.range[1]) throw new RangeError(`${k}: va de ${s.range[0]} a ${s.range[1]}`); }
     out[k] = v;
   }
+  out.mapping = mapeoDe(def.mapping);
   out.resolution = par(def.resolution, 'resolution', /** @type {[number, number]} */ (SETTINGS.resolution.default)).map((x) => {
     if (!Number.isInteger(x) || x < 4 || x > 8192) throw new RangeError('resolution: va un entero de 4 a 8192 (o [ancho, alto])');
     return x;

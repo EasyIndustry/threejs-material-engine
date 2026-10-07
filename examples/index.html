@@ -110,6 +110,15 @@
       m.name = nombre;
       scene.add(m);
     }
+    // triplanar: una esfera geodésica (sin UV útiles) con las baldosas proyectadas desde los tres
+    // ejes y mezcladas en los bordes; también el desplazamiento
+    const triplanar = await motor.material({ ...MATERIALES.baldosas, mapping: { type: 'triplanar', scale: 1.6, sharpness: 6 }, displacementScale: 0.05,
+      channels: { ...MATERIALES.baldosas.channels, displacement: [{ generator: 'tiles', params: { columns: 4, rows: 4, stagger: 0, gap: 0.05, bevel: 0.08 } }] } });
+    const geodesica = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8, 48), triplanar);
+    geodesica.position.set(4.8, 0.2, 1.3);
+    geodesica.name = 'triplanar';
+    scene.add(geodesica);
+
     // desplazamiento: necesita una malla densa
     const desplazado = await motor.material({ resolution: 256, displacementScale: 0.25, channels: { baseColor: '#b8a58a', roughness: 0.8, displacement: [{ generator: 'cells', params: { scale: 5 }, invert: true }] } });
     const plano = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.2, 200, 50), desplazado);

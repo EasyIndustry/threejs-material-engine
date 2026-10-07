@@ -47,6 +47,15 @@ test('defineMaterial: un error dice dónde está', () => {
   assert.throws(() => defineMaterial({ brillo: 1 }), /clave desconocida: brillo/);
 });
 
+test('mapping: uv por defecto; triplanar con escala y filo, validado', () => {
+  assert.deepEqual(defineMaterial({}).mapping, { type: 'uv' });
+  assert.deepEqual(defineMaterial({ mapping: 'triplanar' }).mapping, { type: 'triplanar', scale: 1, sharpness: 4 });
+  assert.deepEqual(defineMaterial({ mapping: { type: 'triplanar', scale: 20, sharpness: 8 } }).mapping, { type: 'triplanar', scale: 20, sharpness: 8 });
+  assert.throws(() => defineMaterial({ mapping: { type: 'esferico' } }), /mapping\.type/);
+  assert.throws(() => defineMaterial({ mapping: { type: 'triplanar', scale: 0 } }), /mapping\.scale/);
+  assert.notEqual(hashMaterial({ mapping: 'triplanar' }), hashMaterial({}));
+});
+
 test('planMaterial: constante si no hay capas; textura con sus pasos si hay', () => {
   const p = planMaterial({ channels: { baseColor: '#808080', roughness: { value: 0.5, layers: [{ generator: 'noise', blend: 'multiply' }] } } });
   assert.deepEqual(p.channels.baseColor, { type: 'constant', value: '#808080' });
