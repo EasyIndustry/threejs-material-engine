@@ -20,3 +20,5 @@ Primera versión.
   composición en lineal con targets sRGB para los colores, relieve a normal) y arma el
   `MeshPhysicalMaterial`. Caché por hash, `exportBaked` / `loadBaked`, `release`, `stats`,
   `help`.
+- Mapas portables por defecto (`portable`): se bajan a memoria y sirven en cualquier contexto
+  (un render target del visor, el path tracer lo veía negro).

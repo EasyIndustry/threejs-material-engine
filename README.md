@@ -46,6 +46,10 @@ materiales.help();
 - **Horneado en la GPU, una vez**: lo horneado se cachea por hash (la definición y las versiones
   de sus generadores). Con sobremuestreo para los generadores, y con exportación e importación
   de prehorneados (`exportBaked`, `loadBaked`).
+- **Mapas portables**: cada mapa terminado se baja a memoria (`DataTexture`), así sirve en otro
+  renderer o contexto — el path tracer de un render final, un exportador a glTF. Con
+  `createMaterialEngine(renderer, { portable: false })` queda solo en la GPU (más rápido, pero
+  otro contexto lo ve negro).
 - **Sin build**, módulos ES. **Núcleo puro**: `src/` no importa three ni el DOM; valida, planea y
   hashea en Node. three está en `adapters/three/`.
 
