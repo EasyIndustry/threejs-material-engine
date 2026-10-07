@@ -103,9 +103,12 @@ const NEUTRO = { color: '#ffffff', scalar: 1 };
 
 /**
  * @param {THREE.WebGLRenderer} renderer
- * @param {{ anisotropy?: number }} [opts] `anisotropy`: filtrado de los mapas horneados (8 o lo que dé la placa)
+ * @param {{ anisotropy?: number, portable?: boolean }} [opts] `anisotropy`: filtrado de los mapas horneados (8 o lo que
+ *   dé la placa). `portable` (true): cada mapa terminado se baja a memoria (DataTexture), así sirve en
+ *   cualquier renderer o contexto (el path tracer, un exportador); con false queda solo en la GPU de este
+ *   renderer, que es un poco más rápido pero no se puede leer desde otro contexto.
  */
-export function createMaterialEngine(renderer, { anisotropy = 8 } = {}) {
+export function createMaterialEngine(renderer, { anisotropy = 8, portable = true } = {}) {
   const aniso = Math.min(anisotropy, renderer.capabilities.getMaxAnisotropy());
   const camara = new THREE.OrthographicCamera();
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
@@ -371,8 +374,36 @@ export function createMaterialEngine(renderer, { anisotropy = 8 } = {}) {
     return /** @type {THREE.WebGLRenderTarget} */ (acc);
   }
 
+  /**
+   * Baja un target terminado a memoria: una DataTexture con los mismos bytes (los de color ya en
+   * sRGB), que se sube sola a cualquier contexto. Las filas quedan de abajo hacia arriba, como en el
+   * target (v = 0 abajo), así que va sin flipY.
+   * @param {THREE.WebGLRenderTarget} rt
+   */
+  function aDatos(rt) {
+    const { width: w, height: h } = rt;
+    const px = new Uint8Array(w * h * 4);
+    renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
+    const t = new THREE.DataTexture(px, w, h, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.colorSpace = rt.texture.colorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.generateMipmaps = true;
+    t.anisotropy = aniso;
+    t.needsUpdate = true;
+    rt.dispose();
+    return t;
+  }
+  /** El mapa terminado: en memoria (portable) o el del target. */
+  const terminar = (rt, targets) => {
+    if (portable) return aDatos(rt);
+    targets.push(rt);
+    return rt.texture;
+  };
+
   // ---------- la caché: lo horneado por hash ----------
-  /** @type {Map<string, { textures: Record<string, THREE.Texture>, targets: THREE.WebGLRenderTarget[], material: THREE.MeshPhysicalMaterial | null, plan: ReturnType<typeof planMaterial> }>} */
+  /** @type {Map<string, { textures: Record<string, THREE.Texture>, targets: THREE.WebGLRenderTarget[], propias: THREE.Texture[], material: THREE.MeshPhysicalMaterial | null, plan: ReturnType<typeof planMaterial> }>} */
   const cache = new Map();
   /** @type {Map<string, Promise<any>>} */
   const enCurso = new Map();
@@ -403,8 +434,7 @@ export function createMaterialEngine(renderer, { anisotropy = 8 } = {}) {
         const info = CHANNELS[canal];
         const fin = pase({ tipo: info.type, srgb: !!info.srgb, w, h, tex: acc.texture, read: info.type === 'scalar' ? 'r' : 'rgb', final: true });
         acc.dispose();
-        targets.push(fin);
-        textures[canal] = fin.texture;
+        textures[canal] = terminar(fin, targets);
         onProgress?.(++hechos / total, canal);
       }
       if (plan.normal.from?.type === 'texture' || plan.normal.bump) {
@@ -423,20 +453,27 @@ export function createMaterialEngine(renderer, { anisotropy = 8 } = {}) {
           fin = pase({ tipo: 'normal', srgb: false, w, h, tex: /** @type {THREE.WebGLRenderTarget} */ (n).texture, final: true });
         }
         n?.dispose();
-        targets.push(fin);
-        textures.normal = fin.texture;
+        textures.normal = terminar(fin, targets);
         onProgress?.(++hechos / total, 'normal');
       }
     } catch (e) {
       targets.forEach((t) => t.dispose());
+      Object.values(textures).forEach((t) => t.dispose());
       throw e;
     } finally {
       renderer.setRenderTarget(prevRT);
       renderer.autoClear = prevClear;
     }
-    const entrada = { textures, targets, material: null, plan };
+    const entrada = { textures, targets, propias: portable ? Object.values(textures) : [], material: null, plan };
     cache.set(k, entrada);
     return entrada;
+  }
+
+  /** Suelta lo de una entrada de la caché: sus targets, sus texturas propias y su material. */
+  function soltar(e) {
+    e.targets.forEach((t) => t.dispose());
+    e.propias.forEach((t) => t.dispose());
+    e.material?.dispose();
   }
 
   /** Hornea (o devuelve de la caché) un material. Una sola cola: la GPU hace una cosa a la vez. */
@@ -526,15 +563,23 @@ export function createMaterialEngine(renderer, { anisotropy = 8 } = {}) {
       /** @type {Record<string, Blob>} */
       const files = {};
       for (const [canal, tex] of Object.entries(entrada.textures)) {
-        const rt = entrada.targets.find((t) => t.texture === tex);
-        const { width: w, height: h } = /** @type {THREE.WebGLRenderTarget} */ (rt);
-        const px = new Uint8Array(w * h * 4);
-        renderer.readRenderTargetPixels(/** @type {THREE.WebGLRenderTarget} */ (rt), 0, 0, w, h, px);
         const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        const img = new ImageData(w, h);
-        for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
-        /** @type {CanvasRenderingContext2D} */ (c.getContext('2d')).putImageData(img, 0, 0);
+        const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+        const rt = entrada.targets.find((t) => t.texture === tex);
+        if (tex.isDataTexture || rt) {
+          // bytes del horneado: filas de abajo hacia arriba, se dan vuelta para la imagen
+          const w = rt ? rt.width : tex.image.width, h = rt ? rt.height : tex.image.height;
+          let px = tex.isDataTexture ? /** @type {Uint8Array} */ (tex.image.data) : new Uint8Array(w * h * 4);
+          if (rt) renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
+          c.width = w; c.height = h;
+          const img = new ImageData(w, h);
+          for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+          g.putImageData(img, 0, 0);
+        } else {
+          // una imagen cargada (de loadBaked): ya está con v = 1 arriba
+          c.width = tex.image.width; c.height = tex.image.height;
+          g.drawImage(tex.image, 0, 0);
+        }
         files[canal] = await new Promise((ok, mal) => c.toBlob((b) => (b ? ok(b) : mal(new Error(`no se pudo exportar ${canal}`))), type, quality));
       }
       return { hash: k, files };
@@ -557,7 +602,8 @@ export function createMaterialEngine(renderer, { anisotropy = 8 } = {}) {
       }
       const faltan = Object.entries(plan.channels).filter(([c, p]) => p.type === 'texture' && c !== 'bump' && !textures[c] && !(c === 'normal' && textures.normal));
       if (faltan.length) throw new Error(`faltan prehorneados de ${faltan.map(([c]) => c).join(', ')}`);
-      const entrada = { textures, targets: [], material: null, plan };
+      // las imágenes son de la caché de imágenes: release no las suelta (propias vacío)
+      const entrada = { textures, targets: [], propias: [], material: null, plan };
       entrada.material = armar(plan, textures);
       cache.set(k, entrada);
       return entrada.material;
@@ -578,8 +624,7 @@ export function createMaterialEngine(renderer, { anisotropy = 8 } = {}) {
       const k = hashDe(defineMaterial(def));
       const e = cache.get(k);
       if (!e) return false;
-      e.targets.forEach((t) => t.dispose());
-      e.material?.dispose();
+      soltar(e);
       cache.delete(k);
       return true;
     },
@@ -587,13 +632,17 @@ export function createMaterialEngine(renderer, { anisotropy = 8 } = {}) {
     /** Qué hay en memoria: materiales, texturas y megabytes aproximados (con mipmaps). */
     stats() {
       let texturas = 0, bytes = 0;
-      for (const e of cache.values()) for (const t of e.targets) { texturas++; bytes += t.width * t.height * 4 * (t.texture.generateMipmaps ? 4 / 3 : 1); }
+      for (const e of cache.values()) for (const t of Object.values(e.textures)) {
+        texturas++;
+        const { width: w = 0, height: h = 0 } = t.image ?? {};
+        bytes += w * h * 4 * (t.generateMipmaps ? 4 / 3 : 1) * (t.isDataTexture ? 2 : 1); // en memoria y en la GPU
+      }
       return { materials: cache.size, textures: texturas, megabytes: +(bytes / 2 ** 20).toFixed(1), programs: programas.size };
     },
 
     /** Lo suelta todo: lo horneado, los programas y las imágenes. */
     dispose() {
-      for (const e of cache.values()) { e.targets.forEach((t) => t.dispose()); e.material?.dispose(); }
+      for (const e of cache.values()) soltar(e);
       cache.clear();
       for (const p of programas.values()) p.mat.dispose();
       programas.clear();
