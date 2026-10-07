@@ -1,0 +1,20 @@
+{
+  "name": "threejs-material-engine",
+  "version": "0.1.0",
+  "description": "Materiales por capas para three.js, como en un CAD: todos los canales PBR (difuso, alfa, metálico, rugosidad, normal, bump, desplazamiento, AO, emisivo, transmisión, barniz, sheen…), capas de mapas con modos de fusión y máscaras, capas de material, generadores procedurales y plugins, horneados en la GPU.",
+  "type": "module",
+  "license": "MIT",
+  "author": "EasyIndustry",
+  "repository": { "type": "git", "url": "git+https://github.com/EasyIndustry/threejs-material-engine.git" },
+  "exports": {
+    ".": "./src/index.js",
+    "./three": "./adapters/three/engine.js"
+  },
+  "files": ["src", "adapters", "examples", "LICENSE", "README.md"],
+  "scripts": {
+    "test": "node --test"
+  },
+  "peerDependencies": { "three": ">=0.160.0" },
+  "peerDependenciesMeta": { "three": { "optional": true } },
+  "engines": { "node": ">=20" }
+}
