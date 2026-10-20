@@ -1,5 +1,16 @@
 # Cambios
 
+## 0.3.0
+
+- `filter: 'linear' | 'nearest'` (en `SETTINGS`): con `'nearest'` los mapas del material, las
+  imágenes cargadas y los targets del horneado van con `NearestFilter` (y
+  `NearestMipmapNearestFilter` de lejos), sin mipmaps lineales ni anisotropía: el pixel art queda
+  duro. Entra en el hash, y la caché de imágenes separa la misma URL en lineal y en nearest.
+- `resolution: 'source'`: hornea al tamaño de la primera imagen del material (recorriendo los
+  canales en el orden de `CHANNELS`, después las capas de material), sin remuestrearla; los
+  generadores se hornean a esa misma grilla. Sin ninguna imagen, `defineMaterial` da un error.
+  `sourceImageOf(def)` dice qué imagen es.
+
 ## 0.2.0
 
 - Mapeo triplanar (`mapping: { type: 'triplanar', scale, sharpness }`): cada mapa se proyecta

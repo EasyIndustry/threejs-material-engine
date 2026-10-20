@@ -46,6 +46,17 @@ materiales.help();
 - **Horneado en la GPU, una vez**: lo horneado se cachea por hash (la definición y las versiones
   de sus generadores). Con sobremuestreo para los generadores, y con exportación e importación
   de prehorneados (`exportBaked`, `loadBaked`).
+- **Pixel art sin borronear**: `filter: 'nearest'` muestrea los mapas (y compone las capas) al
+  píxel más cercano, y `resolution: 'source'` hornea al tamaño de la primera imagen del material,
+  sin remuestrearla; los generadores se hornean a esa misma grilla. Para sprites, tilesets,
+  texturas de vóxeles o grillas de datos que no se pueden interpolar.
+
+  ```js
+  materiales.material({
+    filter: 'nearest', resolution: 'source', alphaMode: 'mask',
+    channels: { baseColor: ['heroe.png'], alpha: [{ image: 'heroe.png', read: 'a' }] },
+  });
+  ```
 - **Mapeo UV o triplanar**: `mapping: { type: 'triplanar', scale, sharpness }` proyecta los mapas
   desde los tres ejes y los mezcla según la normal: sin costuras ni polos, en cualquier malla.
 - **Mapas portables**: cada mapa terminado se baja a memoria (`DataTexture`), así sirve en otro

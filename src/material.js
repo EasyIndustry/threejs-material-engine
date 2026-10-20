@@ -205,8 +205,8 @@ export function defineMaterial(def) {
     out[k] = v;
   }
   out.mapping = mapeoDe(def.mapping);
-  out.resolution = par(def.resolution, 'resolution', /** @type {[number, number]} */ (SETTINGS.resolution.default)).map((x) => {
-    if (!Number.isInteger(x) || x < 4 || x > 8192) throw new RangeError('resolution: va un entero de 4 a 8192 (o [ancho, alto])');
+  out.resolution = def.resolution === 'source' ? 'source' : par(def.resolution, 'resolution', /** @type {[number, number]} */ (SETTINGS.resolution.default)).map((x) => {
+    if (!Number.isInteger(x) || x < 4 || x > 8192) throw new RangeError("resolution: va un entero de 4 a 8192 (o [ancho, alto], o 'source')");
     return x;
   });
   if (!isHexColor(out.attenuationColor)) throw new TypeError("attenuationColor: va un color '#rrggbb'");
@@ -223,6 +223,7 @@ export function defineMaterial(def) {
     if (!Object.keys(channels).length) throw new Error(`${que}: una capa de material sin canales no cambia nada`);
     return { name: String(o.name ?? `capa ${i + 1}`), opacity, mask: o.mask === undefined ? null : mascaraDe(o.mask, `${que}.mask`), channels };
   });
+  if (out.resolution === 'source' && !sourceImageOf(/** @type {MaterialDef} */ (out))) throw new Error("resolution: 'source' toma el tamaño de una imagen, y el material no tiene ninguna (va un número o [ancho, alto])");
   normalizados.add(out);
   return /** @type {MaterialDef} */ (out);
 }
@@ -342,4 +343,28 @@ export function generatorsOf(d) {
   const canales = [...Object.values(d.channels), ...d.layers.flatMap((l) => { ver(l.mask); return Object.values(l.channels); })];
   for (const c of canales) c.layers.forEach(ver);
   return [...out].sort();
+}
+
+/**
+ * La imagen que da el tamaño con resolution: 'source': la primera que aparece recorriendo los
+ * canales en el orden de CHANNELS (cada capa y después su máscara), y después las capas de
+ * material en orden (su máscara y después sus canales). No depende del orden en que se
+ * escribieron las claves, así que dos definiciones con el mismo hash eligen la misma.
+ * `channel`: el canal donde se usa (null en una máscara), para cargarla en su espacio de color.
+ * @param {MaterialDef} d @returns {{ url: string, channel: string | null } | null}
+ */
+export function sourceImageOf(d) {
+  /** @param {Mask | null} m @param {string | null} channel */
+  const de = (m, channel) => (m?.source.kind === 'image' ? { url: m.source.url, channel } : null);
+  /** @param {Record<string, Channel>} canales */
+  const enCanales = (canales) => {
+    for (const c of Object.keys(CHANNELS)) {
+      for (const l of canales[c]?.layers ?? []) {
+        const r = de(l, c) ?? de(l.mask, null);
+        if (r) return r;
+      }
+    }
+    return null;
+  };
+  return enCanales(d.channels) ?? d.layers.reduce((r, l) => r ?? de(l.mask, null) ?? enCanales(l.channels), /** @type {{ url: string, channel: string | null } | null} */ (null));
 }

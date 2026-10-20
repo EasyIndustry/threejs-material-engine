@@ -51,7 +51,8 @@ export const CHANNELS = Object.freeze({
  */
 export const SETTINGS = Object.freeze({
   name: { default: '', doc: 'su nombre' },
-  resolution: { default: [1024, 1024], doc: 'tamaño en píxeles de los mapas horneados: un número o [ancho, alto]' },
+  resolution: { default: [1024, 1024], doc: "tamaño en píxeles de los mapas horneados: un número, [ancho, alto] o 'source' (el de la primera imagen del material, sin remuestrear)" },
+  filter: { default: 'linear', values: ['linear', 'nearest'], doc: "cómo se muestrean los mapas: 'linear' interpola (suave), 'nearest' toma el píxel más cercano (pixel art, vóxeles, grillas de datos)" },
   supersample: { default: 2, range: [1, 4], doc: 'sobremuestreo del horneado de generadores: dibuja N× por eje y promedia (bordes netos sin escalera)' },
   alphaMode: { default: 'opaque', values: ['opaque', 'mask', 'blend'], doc: "cómo se usa alpha: 'opaque' lo ignora, 'mask' recorta en alphaCutoff (chapa perforada), 'blend' es transparencia" },
   alphaCutoff: { default: 0.5, range: [0, 1], doc: "dónde recorta alphaMode 'mask'" },

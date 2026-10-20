@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   CHANNELS, SETTINGS, OUTPUTS, isMappable, BLEND_MODES, blendValue, layerValue,
-  defineMaterial, planMaterial, hashMaterial, generatorsOf, hexToLinear, linearToHex,
+  defineMaterial, planMaterial, hashMaterial, generatorsOf, sourceImageOf, hexToLinear, linearToHex,
   registerGenerator, getGenerator, listGenerators, resolveParams, paramUniformsGLSL, ENGINE_MEMBERS, memberNames,
 } from '../src/index.js';
 
@@ -54,6 +54,31 @@ test('mapping: uv por defecto; triplanar con escala y filo, validado', () => {
   assert.throws(() => defineMaterial({ mapping: { type: 'esferico' } }), /mapping\.type/);
   assert.throws(() => defineMaterial({ mapping: { type: 'triplanar', scale: 0 } }), /mapping\.scale/);
   assert.notEqual(hashMaterial({ mapping: 'triplanar' }), hashMaterial({}));
+});
+
+test('filter: lineal por defecto; nearest para pixel art, y cambia el hash', () => {
+  assert.equal(defineMaterial({}).filter, 'linear');
+  assert.equal(defineMaterial({ filter: 'nearest' }).filter, 'nearest');
+  assert.throws(() => defineMaterial({ filter: 'bicubic' }), /filter: va linear, nearest/);
+  assert.notEqual(hashMaterial({ filter: 'nearest' }), hashMaterial({}));
+});
+
+test("resolution: 'source' toma el tamaño de la imagen, y necesita una", () => {
+  const sprite = { resolution: 'source', channels: { baseColor: [{ image: 'heroe.png' }], alpha: [{ image: 'heroe.png', read: 'a' }] } };
+  assert.equal(defineMaterial(sprite).resolution, 'source');
+  assert.notEqual(hashMaterial(sprite), hashMaterial({ ...sprite, resolution: 1024 }));
+  assert.deepEqual(sourceImageOf(defineMaterial(sprite)), { url: 'heroe.png', channel: 'baseColor' });
+  assert.throws(() => defineMaterial({ resolution: 'source', channels: { roughness: [{ generator: 'noise' }] } }), /'source'.*no tiene ninguna/);
+  assert.throws(() => defineMaterial({ resolution: 'fuente' }), /resolution/);
+  // la imagen sale del orden de CHANNELS, no del orden en que se escribieron las claves
+  const a = defineMaterial({ resolution: 'source', channels: { roughness: ['r.png'], baseColor: ['c.png'] } });
+  const b = defineMaterial({ resolution: 'source', channels: { baseColor: ['c.png'], roughness: ['r.png'] } });
+  assert.equal(hashMaterial(a), hashMaterial(b));
+  assert.equal(sourceImageOf(a)?.url, 'c.png');
+  // también en una máscara o en una capa de material
+  assert.deepEqual(sourceImageOf(defineMaterial({ resolution: 'source', channels: { roughness: [{ value: 1, mask: 'm.png' }] } })), { url: 'm.png', channel: null });
+  assert.deepEqual(sourceImageOf(defineMaterial({ resolution: 'source', layers: [{ channels: { emissive: ['e.png'] } }] })), { url: 'e.png', channel: 'emissive' });
+  assert.equal(sourceImageOf(defineMaterial({})), null);
 });
 
 test('planMaterial: constante si no hay capas; textura con sus pasos si hay', () => {

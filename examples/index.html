@@ -51,6 +51,20 @@
     g.fillStyle = '#2f5d8a'; g.font = 'bold 120px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('CAD', 128, 132);
     const logo = c.toDataURL();
 
+    // un sprite de pixel art de 16×16, con fondo transparente
+    const sp = document.createElement('canvas');
+    sp.width = sp.height = 16;
+    const gs = sp.getContext('2d');
+    const SPRITE = [
+      '......1111......', '....11222211....', '...1222222221...', '..122332233221..',
+      '..123333333321..', '.12233133133221.', '.12233133133221.', '.12223333332221.',
+      '.12222333322221.', '..122222222221..', '..124422224421..', '...1244444421...',
+      '....11444411....', '.....144441.....', '....14411441....', '....111..111....',
+    ];
+    const PALETA = { 1: '#1d1d2b', 2: '#3f9e4a', 3: '#f2d16b', 4: '#b8452f' };
+    SPRITE.forEach((fila, y) => [...fila].forEach((p, x) => { if (PALETA[p]) { gs.fillStyle = PALETA[p]; gs.fillRect(x, y, 1, 1); } }));
+    const sprite = sp.toDataURL();
+
     const motor = createMaterialEngine(renderer);
     const MATERIALES = {
       'chapa pintada con raspones': {
@@ -119,6 +133,21 @@
     geodesica.name = 'triplanar';
     scene.add(geodesica);
 
+    // pixel art: el mismo sprite de 16×16 en lineal (borroso) y en nearest (píxeles duros); con
+    // resolution: 'source' se hornea a 16×16, sin remuestrear, y el ruido de la rugosidad queda en
+    // esa misma grilla
+    for (const [j, filter] of ['linear', 'nearest'].entries()) {
+      const mat = await motor.material({
+        filter, resolution: 'source', alphaMode: 'mask', doubleSided: true,
+        channels: { baseColor: [{ image: sprite }], alpha: [{ image: sprite, read: 'a' }], roughness: { value: 0.5, layers: [{ generator: 'noise', params: { scale: 8 }, opacity: 0.6 }] } },
+      });
+      listos[`pixel art (${filter})`] = mat;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), mat);
+      m.position.set(-4.8, 0.2, j * 2.6 - 1.3);
+      m.name = `pixel art (${filter})`;
+      scene.add(m);
+    }
+
     // desplazamiento: necesita una malla densa
     const desplazado = await motor.material({ resolution: 256, displacementScale: 0.25, channels: { baseColor: '#b8a58a', roughness: 0.8, displacement: [{ generator: 'cells', params: { scale: 5 }, invert: true }] } });
     const plano = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.2, 200, 50), desplazado);
@@ -128,7 +157,7 @@
     scene.add(plano);
 
     const estado = document.getElementById('estado');
-    estado.textContent = `${nombres.length + 1} materiales horneados en ${Math.round(performance.now() - t0)} ms — ${JSON.stringify(motor.stats())}`;
+    estado.textContent = `${nombres.length + 4} materiales horneados en ${Math.round(performance.now() - t0)} ms — ${JSON.stringify(motor.stats())}`;
     renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
     Object.assign(window, { THREE, motor, scene, camera, controls, renderer, MATERIALES, listos, listo: true });
   </script>

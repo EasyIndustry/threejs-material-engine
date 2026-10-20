@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { CHANNELS, OUTPUTS } from '../../src/channels.js';
 import { BLEND_MODES, BLEND_GLSL } from '../../src/blend.js';
-import { defineMaterial, planMaterial, hashMaterial, generatorsOf } from '../../src/material.js';
+import { defineMaterial, planMaterial, hashMaterial, generatorsOf, sourceImageOf } from '../../src/material.js';
 import { getGenerator, registerGenerator, listGenerators, resolveParams, paramUniformsGLSL, SURFACE_GLSL, NOISE_GLSL } from '../../src/generators.js';
 import { help } from '../../src/help.js';
 import { ENGINE_MEMBERS } from '../../src/members.js';
@@ -135,15 +135,27 @@ export function createMaterialEngine(renderer, { anisotropy = 8, portable = true
     uniforms: { tSrc: { value: null }, ss: { value: 1 }, esNormal: { value: false }, srcTexel: { value: new THREE.Vector2() } },
   });
 
+  // filter del material que se está horneando: los horneados van de a uno (la cola), así que
+  // alcanza con que hornearAhora lo ponga al empezar
+  let cerca = false;
+
+  /** Los filtros de un mapa: lineal (con mipmaps lineales y anisotropía) o el píxel más cercano. @param {THREE.Texture} t @param {boolean} nearest @param {boolean} mipmaps */
+  function filtrar(t, nearest, mipmaps) {
+    t.magFilter = nearest ? THREE.NearestFilter : THREE.LinearFilter;
+    t.minFilter = nearest ? (mipmaps ? THREE.NearestMipmapNearestFilter : THREE.NearestFilter) : (mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter);
+    t.generateMipmaps = mipmaps;
+    t.anisotropy = mipmaps && !nearest ? aniso : 1;
+    return t;
+  }
+
   /** Un render target del tamaño dado; los de color, en sRGB. `final`: con mipmaps y repetición, para usar en un material. */
   function target(w, h, srgb, final = false) {
     const rt = new THREE.WebGLRenderTarget(w, h, {
       type: THREE.UnsignedByteType, depthBuffer: false,
       colorSpace: srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace,
-      generateMipmaps: final, minFilter: final ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter, magFilter: THREE.LinearFilter,
       wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping,
     });
-    if (final) rt.texture.anisotropy = aniso;
+    filtrar(rt.texture, cerca, final);
     return rt;
   }
 
@@ -262,15 +274,14 @@ export function createMaterialEngine(renderer, { anisotropy = 8, portable = true
   const cargador = new THREE.TextureLoader();
   /** @type {Map<string, Promise<THREE.Texture>>} */
   const imagenes = new Map();
-  /** @param {string} url @param {boolean} srgb */
-  function imagen(url, srgb) {
-    const k = `${srgb ? 'srgb' : 'lin'}:${url}`;
+  /** @param {string} url @param {boolean} srgb @param {boolean} nearest */
+  function imagen(url, srgb, nearest) {
+    const k = `${srgb ? 'srgb' : 'lin'}:${nearest ? 'nearest' : 'linear'}:${url}`;
     if (!imagenes.has(k)) {
       imagenes.set(k, cargador.loadAsync(url).then((t) => {
         t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
         t.wrapS = t.wrapT = THREE.RepeatWrapping;
-        t.anisotropy = aniso;
-        return t;
+        return filtrar(t, nearest, true);
       }).catch((e) => { imagenes.delete(k); throw new Error(`no se pudo cargar la imagen ${url}: ${e?.message ?? e}`); }));
     }
     return /** @type {Promise<THREE.Texture>} */ (imagenes.get(k));
@@ -324,7 +335,7 @@ export function createMaterialEngine(renderer, { anisotropy = 8, portable = true
    */
   async function texturaDe(capa, canal, w, h, ss, temporales) {
     const src = capa.source;
-    if (src.kind === 'image') return { tex: await imagen(src.url, !!canal && !!CHANNELS[canal].srgb), transform: capa.transform };
+    if (src.kind === 'image') return { tex: await imagen(src.url, !!canal && !!CHANNELS[canal].srgb, cerca), transform: capa.transform };
     if (src.kind === 'generator') {
       const rt = hornearGenerador(src, salidaDe(src, canal), w, h, ss, capa.transform);
       temporales.push(rt);
@@ -388,10 +399,7 @@ export function createMaterialEngine(renderer, { anisotropy = 8, portable = true
     const t = new THREE.DataTexture(px, w, h, THREE.RGBAFormat, THREE.UnsignedByteType);
     t.colorSpace = rt.texture.colorSpace;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.magFilter = THREE.LinearFilter;
-    t.generateMipmaps = true;
-    t.anisotropy = aniso;
+    filtrar(t, cerca, true);
     t.needsUpdate = true;
     rt.dispose();
     return t;
@@ -415,9 +423,24 @@ export function createMaterialEngine(renderer, { anisotropy = 8, portable = true
     return hashMaterial(d, generatorsOf(d).map((n) => `${n}@${getGenerator(n).version}`).join(','));
   }
 
+  /**
+   * El tamaño del horneado: el de la definición o, con resolution: 'source', el de su imagen (así
+   * no se remuestrea, y los generadores se hornean a esa misma grilla de píxeles).
+   * @returns {Promise<[number, number]>}
+   */
+  async function resolucionDe(d) {
+    if (d.resolution !== 'source') return d.resolution;
+    const s = /** @type {NonNullable<ReturnType<typeof sourceImageOf>>} */ (sourceImageOf(d));
+    const t = await imagen(s.url, !!s.channel && !!CHANNELS[s.channel].srgb, cerca);
+    const { width: w, height: h } = /** @type {{ width: number, height: number }} */ (t.image);
+    if (!(w >= 1 && h >= 1 && w <= 8192 && h <= 8192)) throw new RangeError(`resolution: 'source': la imagen ${s.url} mide ${w}×${h} (va de 1 a 8192 por lado)`);
+    return [w, h];
+  }
+
   async function hornearAhora(d, k, onProgress) {
     const plan = planMaterial(d);
-    const [w, h] = d.resolution;
+    cerca = d.filter === 'nearest';
+    const [w, h] = await resolucionDe(d);
     const ss = d.supersample;
     const prevRT = renderer.getRenderTarget();
     const prevClear = renderer.autoClear;
@@ -604,7 +627,7 @@ export function createMaterialEngine(renderer, { anisotropy = 8, portable = true
       const textures = {};
       for (const [canal, url] of Object.entries(files)) {
         if (!(canal in CHANNELS)) throw new Error(`canal desconocido en los prehorneados: ${canal}`);
-        textures[canal] = await imagen(url, !!CHANNELS[canal].srgb);
+        textures[canal] = await imagen(url, !!CHANNELS[canal].srgb, d.filter === 'nearest');
       }
       const faltan = Object.entries(plan.channels).filter(([c, p]) => p.type === 'texture' && c !== 'bump' && !textures[c] && !(c === 'normal' && textures.normal));
       if (faltan.length) throw new Error(`faltan prehorneados de ${faltan.map(([c]) => c).join(', ')}`);
